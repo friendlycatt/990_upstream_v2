@@ -21,6 +21,7 @@
 #include <linux/ctype.h>
 #include <linux/error-injection.h>
 #include <linux/bpf_lsm.h>
+#include <linux/btf_ids.h>
 
 #include "disasm.h"
 
