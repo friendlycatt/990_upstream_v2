@@ -29,7 +29,9 @@
 #include <linux/anon_inodes.h>
 #include <linux/export.h>
 #include <linux/debugfs.h>
+#include <linux/list.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/seq_file.h>
 #include <linux/poll.h>
 #include <linux/reservation.h>
@@ -54,6 +56,59 @@ struct dma_buf_list {
 };
 
 static struct dma_buf_list db_list;
+
+/**
+ * dma_buf_iter_begin - begin iteration through the global DMA buffer list
+ *
+ * Return the first buffer that is not being destroyed, with a reference held.
+ * The caller must release it with dma_buf_iter_next() or dma_buf_put().
+ *
+ * Return: The first active buffer, or NULL if no active buffers are present.
+ */
+struct dma_buf *dma_buf_iter_begin(void)
+{
+	struct dma_buf *ret = NULL, *dmabuf;
+
+	/*
+	 * The list mutex prevents removal, not the final reference being
+	 * dropped. Do not resurrect a file whose reference count is zero.
+	 */
+	mutex_lock(&db_list.lock);
+	list_for_each_entry(dmabuf, &db_list.head, list_node) {
+		if (atomic_long_inc_not_zero(&dmabuf->file->f_count)) {
+			ret = dmabuf;
+			break;
+		}
+	}
+	mutex_unlock(&db_list.lock);
+	return ret;
+}
+
+/**
+ * dma_buf_iter_next - continue iteration through the global DMA buffer list
+ * @dmabuf: Buffer returned by dma_buf_iter_begin() or dma_buf_iter_next().
+ *
+ * Consume the reference to @dmabuf and return the next active buffer with a
+ * reference held. The caller must release that reference with
+ * dma_buf_iter_next() or dma_buf_put().
+ *
+ * Return: The next active buffer, or NULL if no further buffers are present.
+ */
+struct dma_buf *dma_buf_iter_next(struct dma_buf *dmabuf)
+{
+	struct dma_buf *ret = NULL, *next = dmabuf;
+
+	mutex_lock(&db_list.lock);
+	list_for_each_entry_continue(next, &db_list.head, list_node) {
+		if (atomic_long_inc_not_zero(&next->file->f_count)) {
+			ret = next;
+			break;
+		}
+	}
+	mutex_unlock(&db_list.lock);
+	dma_buf_put(dmabuf);
+	return ret;
+}
 
 static char *dmabuffs_dname(struct dentry *dentry, char *buffer, int buflen)
 {

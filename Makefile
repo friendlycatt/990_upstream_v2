@@ -1071,16 +1071,34 @@ endif
 export mod_sign_cmd
 
 HOST_LIBELF_LIBS = $(shell pkg-config libelf --libs 2>/dev/null || echo -lelf)
+HOST_LIBELF_CFLAGS = $(shell pkg-config libelf --cflags 2>/dev/null)
+export HOST_LIBELF_LIBS HOST_LIBELF_CFLAGS
+
+ifneq ($(filter y,$(CONFIG_STACK_VALIDATION) $(CONFIG_DEBUG_INFO_BTF)),)
+  has_libelf := $(call try-run,\
+		printf '%s\n' '$(pound)include <libelf.h>' '$(pound)include <gelf.h>' \
+		'int main(void) { return elf_version(EV_CURRENT) == EV_NONE; }' | \
+		$(HOSTCC) $(KBUILD_HOSTCFLAGS) $(HOST_LIBELF_CFLAGS) \
+		$(KBUILD_HOSTLDFLAGS) -xc -o /dev/null - $(HOST_LIBELF_LIBS),1,0)
+endif
 
 ifdef CONFIG_STACK_VALIDATION
-  has_libelf := $(call try-run,\
-		echo "int main() {}" | $(HOSTCC) $(KBUILD_HOSTLDFLAGS) -xc -o /dev/null $(HOST_LIBELF_LIBS) -,1,0)
   ifeq ($(has_libelf),1)
     objtool_target := tools/objtool FORCE
   else
     SKIP_STACK_VALIDATION := 1
     export SKIP_STACK_VALIDATION
   endif
+endif
+
+ifdef CONFIG_BPF
+ifdef CONFIG_DEBUG_INFO_BTF
+  ifeq ($(has_libelf),1)
+    resolve_btfids_target := tools/bpf/resolve_btfids FORCE
+  else
+    ERROR_RESOLVE_BTFIDS := 1
+  endif
+endif
 endif
 
 PHONY += prepare0
@@ -1141,8 +1159,9 @@ $(autoksyms_h):
 ARCH_POSTLINK := $(wildcard $(srctree)/arch/$(SRCARCH)/Makefile.postlink)
 
 # Final link of vmlinux with optional arch pass after final link
-cmd_link-vmlinux =                                                 \
-	$(CONFIG_SHELL) $< $(LD) $(KBUILD_LDFLAGS) $(LDFLAGS_vmlinux) ;    \
+# if_changed appends bookkeeping, so explicitly exit on a failed link script.
+cmd_link-vmlinux = \
+	$(CONFIG_SHELL) $< $(LD) $(KBUILD_LDFLAGS) $(LDFLAGS_vmlinux) || exit $$?; \
 	$(if $(ARCH_POSTLINK), $(MAKE) -f $(ARCH_POSTLINK) $@, true)
 
 vmlinux: scripts/link-vmlinux.sh autoksyms_recursive $(vmlinux-deps) FORCE
@@ -1225,7 +1244,7 @@ prepare0: archprepare gcc-plugins
 	$(Q)$(MAKE) $(build)=.
 
 # All the preparing..
-prepare: prepare0 prepare-objtool
+prepare: prepare0 prepare-objtool prepare-resolve_btfids
 
 # Support for using generic headers in asm-generic
 PHONY += asm-generic uapi-asm-generic
@@ -1236,7 +1255,7 @@ uapi-asm-generic:
 	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.asm-generic \
 	            src=uapi/asm obj=arch/$(SRCARCH)/include/generated/uapi/asm
 
-PHONY += prepare-objtool
+PHONY += prepare-objtool prepare-resolve_btfids
 prepare-objtool: $(objtool_target)
 ifeq ($(SKIP_STACK_VALIDATION),1)
 ifdef CONFIG_UNWINDER_ORC
@@ -1245,6 +1264,12 @@ ifdef CONFIG_UNWINDER_ORC
 else
 	@echo "warning: Cannot use CONFIG_STACK_VALIDATION=y, please install libelf-dev, libelf-devel or elfutils-libelf-devel" >&2
 endif
+endif
+
+prepare-resolve_btfids: $(resolve_btfids_target)
+ifeq ($(ERROR_RESOLVE_BTFIDS),1)
+	@echo "error: Cannot resolve BTF IDs for CONFIG_DEBUG_INFO_BTF=y, please install libelf-dev, libelf-devel or elfutils-libelf-devel" >&2
+	@false
 endif
 
 # Generate some files

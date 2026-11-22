@@ -178,33 +178,53 @@ vmlinux_link()
 # ${2} - file to dump raw BTF data into
 gen_btf()
 {
-	local pahole_ver
+	local pahole_ver pahole_version pahole_flags
 
-	if ! [ -x "$(command -v ${PAHOLE})" ]; then
-		info "BTF" "${1}: pahole (${PAHOLE}) is not available"
+	if ! command -v "${PAHOLE}" >/dev/null 2>&1; then
+		echo "BTF: ${1}: pahole (${PAHOLE}) is not available" >&2
 		return 1
 	fi
 
-	pahole_ver=$(${PAHOLE} --version | sed -E 's/v([0-9]+)\.([0-9]+)/\1\2/')
+	if ! pahole_version=$("${PAHOLE}" --version); then
+		echo "BTF: ${1}: failed to query pahole version" >&2
+		return 1
+	fi
+	pahole_ver=$(printf '%s\n' "${pahole_version}" | \
+		sed -nE 's/^v([0-9]+)\.([0-9]+).*$/\1 \2/p' | \
+		awk '{print $1 * 100 + $2}')
+	case "${pahole_ver}" in
+	''|*[!0-9]*)
+		echo "BTF: ${1}: cannot determine pahole version" >&2
+		return 1
+		;;
+	esac
 	if [ "${pahole_ver}" -lt "113" ]; then
-		info "BTF" "${1}: pahole version $(${PAHOLE} --version) is too old, need at least v1.13"
+		echo "BTF: ${1}: pahole version ${pahole_version} is too old, need at least v1.13" >&2
 		return 1
 	fi
+	pahole_flags=$(${CONFIG_SHELL} "${srctree}/scripts/pahole-flags.sh" \
+		"${pahole_ver}")
 
 	info "BTF" ${2}
-	vmlinux_link ${1}
-	LLVM_OBJCOPY=${OBJCOPY} ${PAHOLE} -J ${1}
+	vmlinux_link "${1}"
+	if ! LLVM_OBJCOPY="${OBJCOPY}" "${PAHOLE}" -J ${pahole_flags} "${1}"; then
+		echo "BTF: ${1}: pahole failed to generate BTF" >&2
+		return 1
+	fi
 
 	# Create ${2} which contains just .BTF section but no symbols. Add
 	# SHF_ALLOC because .BTF will be part of the vmlinux image. --strip-all
 	# deletes all symbols including __start_BTF and __stop_BTF, which will
 	# be redefined in the linker script. Add 2>/dev/null to suppress GNU
 	# objcopy warnings: "empty loadable segment detected at ..."
-	${OBJCOPY} --only-section=.BTF --set-section-flags .BTF=alloc,readonly \
-		--strip-all ${1} ${2} 2>/dev/null
+	if ! ${OBJCOPY} --only-section=.BTF --set-section-flags .BTF=alloc,readonly \
+		--strip-all "${1}" "${2}" 2>/dev/null; then
+		echo "BTF: ${1}: objcopy failed to extract BTF" >&2
+		return 1
+	fi
 	# Change e_type to ET_REL so that it can be used to link final vmlinux.
 	# Unlike GNU ld, lld does not allow an ET_EXEC input.
-	printf '\1' | dd of=${2} conv=notrunc bs=1 seek=16 status=none
+	printf '\1' | dd of="${2}" conv=notrunc bs=1 seek=16 status=none
 }
 
 # Create ${2} .o file with all symbols from the ${1} object file
@@ -319,9 +339,8 @@ fi
 
 btf_vmlinux_bin_o=""
 if [ -n "${CONFIG_DEBUG_INFO_BTF}" ]; then
-	if gen_btf .tmp_vmlinux.btf .btf.vmlinux.bin.o ; then
-		btf_vmlinux_bin_o=.btf.vmlinux.bin.o
-	fi
+	gen_btf .tmp_vmlinux.btf .btf.vmlinux.bin.o
+	btf_vmlinux_bin_o=.btf.vmlinux.bin.o
 fi
 
 kallsymso=""
@@ -379,9 +398,12 @@ info LD vmlinux
 vmlinux_link vmlinux "${kallsymso}" "${btf_vmlinux_bin_o}"
 
 # fill in BTF IDs
-if [ -n "${CONFIG_DEBUG_INFO_BTF}" ]; then
-info BTFIDS vmlinux
-${RESOLVE_BTFIDS} vmlinux
+if [ -n "${CONFIG_DEBUG_INFO_BTF}" ] && [ -n "${CONFIG_BPF}" ]; then
+	info BTFIDS vmlinux
+	if ! "${RESOLVE_BTFIDS}" vmlinux; then
+		echo "BTF: vmlinux: failed to resolve BTF IDs" >&2
+		exit 1
+	fi
 fi
 
 if [ -n "${CONFIG_BUILDTIME_EXTABLE_SORT}" ]; then
