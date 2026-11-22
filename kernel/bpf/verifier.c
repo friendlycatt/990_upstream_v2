@@ -21,7 +21,6 @@
 #include <linux/ctype.h>
 #include <linux/error-injection.h>
 #include <linux/bpf_lsm.h>
-#include <linux/btf_ids.h>
 
 #include "disasm.h"
 
@@ -12507,21 +12506,14 @@ static int check_attach_modify_return(unsigned long addr, const char *func_name)
 	return -EINVAL;
 }
 
-/* list of non-sleepable functions that are otherwise on
- * ALLOW_ERROR_INJECTION list
+/* These functions may be called from non-sleepable contexts. Match by name,
+ * as some are inlined or compiled out and have no BTF ID in this tree.
  */
-BTF_SET_START(btf_non_sleepable_error_inject)
-/* Three functions below can be called from sleepable and non-sleepable context.
- * Assume non-sleepable from bpf safety point of view.
- */
-BTF_ID(func, __add_to_page_cache_locked)
-BTF_ID(func, should_fail_alloc_page)
-BTF_ID(func, should_failslab)
-BTF_SET_END(btf_non_sleepable_error_inject)
-
-static int check_non_sleepable_error_inject(u32 btf_id)
+static int check_non_sleepable_error_inject(const char *func_name)
 {
-	return btf_id_set_contains(&btf_non_sleepable_error_inject, btf_id);
+	return !strcmp(func_name, "__add_to_page_cache_locked") ||
+	       !strcmp(func_name, "should_fail_alloc_page") ||
+	       !strcmp(func_name, "should_failslab");
 }
 
 int bpf_check_attach_target(struct bpf_verifier_log *log,
@@ -12720,7 +12712,7 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
 				/* fentry/fexit/fmod_ret progs can be sleepable only if they are
 				 * attached to ALLOW_ERROR_INJECTION and are not in denylist.
 				 */
-				if (!check_non_sleepable_error_inject(btf_id) &&
+				if (!check_non_sleepable_error_inject(tname) &&
 				    within_error_injection_list(addr))
 					ret = 0;
 				break;
