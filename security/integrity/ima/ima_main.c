@@ -411,6 +411,70 @@ int ima_file_check(struct file *file, int mask)
 }
 EXPORT_SYMBOL_GPL(ima_file_check);
 
+static int __ima_inode_hash(struct inode *inode, char *buf, size_t buf_size)
+{
+	struct integrity_iint_cache *iint;
+	int hash_algo;
+
+	if (!ima_policy_flag)
+		return -EOPNOTSUPP;
+
+	iint = integrity_iint_find(inode);
+	if (!iint)
+		return -EOPNOTSUPP;
+
+	mutex_lock(&iint->mutex);
+	if (!iint->ima_hash) {
+		mutex_unlock(&iint->mutex);
+		return -EOPNOTSUPP;
+	}
+	if (buf) {
+		size_t copied_size;
+
+		copied_size = min_t(size_t, iint->ima_hash->length, buf_size);
+		memcpy(buf, iint->ima_hash->digest, copied_size);
+	}
+	hash_algo = iint->ima_hash->algo;
+	mutex_unlock(&iint->mutex);
+
+	return hash_algo;
+}
+
+/**
+ * ima_file_hash - query the cached measurement of a file
+ * @file: file whose cached measurement is requested
+ * @buf: optional destination for the digest
+ * @buf_size: size of the destination
+ *
+ * Return the hash algorithm, or -EOPNOTSUPP if no measurement is cached.
+ * The digest is truncated to @buf_size and includes any appended signature.
+ */
+int ima_file_hash(struct file *file, char *buf, size_t buf_size)
+{
+	if (!file)
+		return -EINVAL;
+
+	return __ima_inode_hash(file_inode(file), buf, buf_size);
+}
+EXPORT_SYMBOL_GPL(ima_file_hash);
+
+/**
+ * ima_inode_hash - query the cached measurement of an inode
+ * @inode: inode whose cached measurement is requested
+ * @buf: optional destination for the digest
+ * @buf_size: size of the destination
+ *
+ * Return the hash algorithm, or -EOPNOTSUPP if no measurement is cached.
+ */
+int ima_inode_hash(struct inode *inode, char *buf, size_t buf_size)
+{
+	if (!inode)
+		return -EINVAL;
+
+	return __ima_inode_hash(inode, buf, buf_size);
+}
+EXPORT_SYMBOL_GPL(ima_inode_hash);
+
 /**
  * ima_post_path_mknod - mark as a new inode
  * @dentry: newly created dentry

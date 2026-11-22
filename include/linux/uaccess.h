@@ -356,6 +356,36 @@ long strncpy_from_user_nofault(char *dst, const void __user *unsafe_addr,
 		long count);
 extern long strnlen_unsafe_user(const void __user *unsafe_addr, long count);
 
+/* New nofault names without changing the existing 4.19 access interfaces. */
+static inline long copy_from_kernel_nofault(void *dst, const void *src,
+					  size_t size)
+{
+	return probe_kernel_read_strict(dst, src, size);
+}
+
+static inline long copy_to_kernel_nofault(void *dst, const void *src, size_t size)
+{
+	return probe_kernel_write(dst, src, size);
+}
+
+static inline long copy_from_user_nofault(void *dst, const void __user *src,
+					 size_t size)
+{
+	return probe_user_read(dst, src, size);
+}
+
+static inline long copy_to_user_nofault(void __user *dst, const void *src,
+				       size_t size)
+{
+	return probe_user_write(dst, src, size);
+}
+
+static inline long strncpy_from_kernel_nofault(char *dst, const void *src,
+					     long count)
+{
+	return strncpy_from_unsafe_strict(dst, src, count);
+}
+
 /**
  * probe_kernel_address(): safely attempt to read from a location
  * @addr: address to read from
