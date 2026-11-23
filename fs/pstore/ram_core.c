@@ -413,6 +413,10 @@ static void *persistent_ram_vmap(phys_addr_t start, size_t size,
 	page_start = start - offset_in_page(start);
 	page_count = DIV_ROUND_UP(size + offset_in_page(start), PAGE_SIZE);
 
+#if !defined(CONFIG_EXYNOS_SNAPSHOT_PSTORE) || \
+	defined(CONFIG_EXYNOS_SNAPSHOT_PSTORE_CONSOLE)
+	/* Persistent console writes must reach RAM even on an abrupt reset. */
+
 #ifndef CONFIG_DEBUG_SNAPSHOT
 	if (memtype)
 		prot = pgprot_noncached(PAGE_KERNEL);
