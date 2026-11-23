@@ -131,6 +131,27 @@ The dump data can be read from the pstore filesystem. The format for these
 files is ``dmesg-ramoops-N``, where N is the record number in memory. To delete
 a stored record from RAM, simply unlink the respective pstore file.
 
+Samsung debug-snapshot console
+-----------------------------
+
+``CONFIG_DEBUG_SNAPSHOT_PSTORE_CONSOLE`` enables continuous console logging
+in the existing debug-snapshot ``log_pstore`` reservation. It requires built-in
+``CONFIG_PSTORE`` and ``CONFIG_PSTORE_RAM`` and selects ``CONFIG_PSTORE_CONSOLE``.
+Half of the region is used for console messages, with one quarter each for a
+panic/oops record and userspace pmsg. Disabling this option retains the
+half-panic, half-pmsg partitioning.
+
+The Exynos9830 device tree reserves 2 MiB at ``0xeb110000``, ending immediately
+before S2D at ``0xeb310000``. With this option enabled, the panic/oops record is
+512 KiB, the console is 1 MiB and pmsg is 512 KiB. Other snapshot buffers and
+the Exynos9820 reservation are unchanged.
+
+After a warm reboot, mount pstore and copy ``console-ramoops-0`` before another
+reboot. Both the logging kernel and the reading kernel (including recovery)
+must use the same reserved address, size and partitioning. Records from the
+old 32 KiB layout are not compatible. RAM contents may be lost on a power-off,
+and console logs do not necessarily include userspace stdout/stderr.
+
 Persistent function tracing
 ---------------------------
 

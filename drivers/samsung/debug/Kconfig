@@ -11,16 +11,6 @@ menuconfig SEC_DEBUG
 	depends on DEBUG_SNAPSHOT && SEC_REBOOT
 	default y
 
-config EXYNOS_SNAPSHOT_PSTORE_CONSOLE
-	bool "Reserve a persistent ramoops console buffer"
-	depends on EXYNOS_SNAPSHOT_PSTORE
-	select PSTORE_CONSOLE
-	help
-	  Reserve 2 MiB for ramoops: 1 MiB for the console and 512 KiB each
-	  for panic/oops and userspace pmsg records. Console logs from the
-	  previous boot can be read from /sys/fs/pstore/console-ramoops-0.
-	  The logging and reading kernels must use the same memory layout.
-
 config SEC_DEBUG_RESET_REASON
 	bool "Enable Samsung reset reason"
 	depends on SEC_DEBUG

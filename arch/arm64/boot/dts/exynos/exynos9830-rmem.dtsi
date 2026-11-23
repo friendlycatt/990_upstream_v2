@@ -118,7 +118,8 @@
 			};
 			log_pstore {
 				compatible = "debug-snapshot,log_pstore";
-				reg = <0 DSS_LOG_PSTORE_ADDR DSS_LOG_PSTORE_SIZE>;
+				/* Grow below S2D without moving other snapshot buffers. */
+				reg = <0 (DSS_LOG_S2D_ADDR - SZ_2M) SZ_2M>;
 			};
 			log_kevents {
 				compatible = "debug-snapshot,log_kevents";

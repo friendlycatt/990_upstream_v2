@@ -2085,6 +2085,19 @@ menuconfig DEBUG_SNAPSHOT
 	bool "Debug SnapShot Support"
 	default n
 
+config DEBUG_SNAPSHOT_PSTORE_CONSOLE
+	bool "Enable a persistent debug-snapshot ramoops console"
+	depends on DEBUG_SNAPSHOT && PSTORE = y && PSTORE_RAM = y
+	select PSTORE_CONSOLE
+	help
+	  Use half of the reserved log_pstore region for kernel console
+	  messages and one quarter each for panic/oops and userspace pmsg.
+	  The region must be reserved by the device tree; this option does
+	  not allocate additional memory. The 2 MiB Exynos9830 reservation
+	  provides a 1 MiB console and 512 KiB each for panic/oops and pmsg.
+	  Previous console logs are in /sys/fs/pstore/console-ramoops-0.
+	  The logging and reading kernels must use the same memory layout.
+
 config DEBUG_SNAPSHOT_USER_MODE
 	bool "Enable User Mode, Most of debug feature are disabled"
 	depends on DEBUG_SNAPSHOT

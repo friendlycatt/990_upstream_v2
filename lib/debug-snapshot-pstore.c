@@ -226,8 +226,6 @@ EXPORT_SYMBOL(dbg_snapshot_hook_pmsg);
  */
 
 static struct ramoops_platform_data dss_ramoops_data = {
-	.record_size	= SZ_4K,
-	.pmsg_size	= SZ_4K,
 	.dump_oops	= 1,
 };
 
@@ -240,9 +238,23 @@ static struct platform_device dss_ramoops = {
 
 static int __init dss_pstore_init(void)
 {
-	if (dbg_snapshot_get_enable_item("log_pstore")) {
-		dss_ramoops_data.mem_size = dbg_snapshot_get_item_size("log_pstore");
-		dss_ramoops_data.mem_address = dbg_snapshot_get_item_paddr("log_pstore");
+	if (!dbg_snapshot_get_enable_item(DSS_ITEM_PSTORE))
+		return -ENODEV;
+
+	dss_ramoops_data.mem_size = dbg_snapshot_get_item_size(DSS_ITEM_PSTORE);
+	dss_ramoops_data.mem_address = dbg_snapshot_get_item_paddr(DSS_ITEM_PSTORE);
+	if (!dss_ramoops_data.mem_address ||
+	    dss_ramoops_data.mem_size < SZ_16K) {
+		pr_err("debug-snapshot: invalid pstore reserved memory\n");
+		return -EINVAL;
+	}
+
+	if (IS_ENABLED(CONFIG_DEBUG_SNAPSHOT_PSTORE_CONSOLE)) {
+		/* Keep console, panic and pmsg inside the reserved region. */
+		dss_ramoops_data.console_size = dss_ramoops_data.mem_size / 2;
+		dss_ramoops_data.pmsg_size = dss_ramoops_data.mem_size / 4;
+		dss_ramoops_data.record_size = dss_ramoops_data.mem_size / 4;
+	} else {
 		dss_ramoops_data.pmsg_size = dss_ramoops_data.mem_size / 2;
 		dss_ramoops_data.record_size = dss_ramoops_data.mem_size / 2;
 	}
