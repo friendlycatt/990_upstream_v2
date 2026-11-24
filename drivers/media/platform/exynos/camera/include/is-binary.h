@@ -12,6 +12,8 @@
 #ifndef IS_BINARY_H
 #define IS_BINARY_H
 
+#include <linux/vmalloc.h>
+
 #include "is-config.h"
 
 #ifdef VENDER_PATH
@@ -57,10 +59,21 @@
 /* static reserved memory for libraries */
 #define CDH_SIZE		SZ_128K		/* CDH : Camera Debug Helper */
 
-#ifdef CONFIG_KASAN
-#define LIB_OFFSET		(VMALLOC_START + 0xF6000000 - 0x8000000)
+/*
+ * Keep the fixed camera library and heap layout used by reserve-fimc.
+ * The separate BPF JIT region shifts VMALLOC_START, not the camera ABI.
+ */
+#ifdef BPF_JIT_REGION_SIZE
+#define LIB_VMALLOC_BASE	(VMALLOC_START - BPF_JIT_REGION_SIZE)
 #else
-#define LIB_OFFSET		(VMALLOC_START + 0x1000000000UL + 0xF6000000 - 0x8000000)
+#define LIB_VMALLOC_BASE	VMALLOC_START
+#endif
+
+#ifdef CONFIG_KASAN
+#define LIB_OFFSET		(LIB_VMALLOC_BASE + 0xF6000000 - 0x8000000)
+#else
+#define LIB_OFFSET		(LIB_VMALLOC_BASE + 0x1000000000UL + \
+				 0xF6000000 - 0x8000000)
 #endif
 
 #define __LIB_START		(LIB_OFFSET + 0x04000000 - CDH_SIZE)
